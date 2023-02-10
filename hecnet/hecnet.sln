@@ -1,0 +1,39 @@
+Microsoft Visual Studio Solution File, Format Version 8.00
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hecnet", "hecnet.vcproj", "{8B459282-1DF5-4F26-9409-E54545F75227}"
+	ProjectSection(ProjectDependencies) = postProject
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UPDtest", "..\UPDtest\UPDtest.vcproj", "{A76C29EB-9316-4C7C-A214-AC16A13C2D6F}"
+	ProjectSection(ProjectDependencies) = postProject
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ethlist", "..\ethlist\ethlist.vcproj", "{FC173C84-3EBF-4D1F-9C4C-5ECE0E3A1425}"
+	ProjectSection(ProjectDependencies) = postProject
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfiguration) = preSolution
+		Debug = Debug
+		Release = Release
+	EndGlobalSection
+	GlobalSection(ProjectDependencies) = postSolution
+	EndGlobalSection
+	GlobalSection(ProjectConfiguration) = postSolution
+		{8B459282-1DF5-4F26-9409-E54545F75227}.Debug.ActiveCfg = Debug|Win32
+		{8B459282-1DF5-4F26-9409-E54545F75227}.Debug.Build.0 = Debug|Win32
+		{8B459282-1DF5-4F26-9409-E54545F75227}.Release.ActiveCfg = Release|Win32
+		{8B459282-1DF5-4F26-9409-E54545F75227}.Release.Build.0 = Release|Win32
+		{A76C29EB-9316-4C7C-A214-AC16A13C2D6F}.Debug.ActiveCfg = Debug|Win32
+		{A76C29EB-9316-4C7C-A214-AC16A13C2D6F}.Debug.Build.0 = Debug|Win32
+		{A76C29EB-9316-4C7C-A214-AC16A13C2D6F}.Release.ActiveCfg = Release|Win32
+		{A76C29EB-9316-4C7C-A214-AC16A13C2D6F}.Release.Build.0 = Release|Win32
+		{FC173C84-3EBF-4D1F-9C4C-5ECE0E3A1425}.Debug.ActiveCfg = Debug|Win32
+		{FC173C84-3EBF-4D1F-9C4C-5ECE0E3A1425}.Debug.Build.0 = Debug|Win32
+		{FC173C84-3EBF-4D1F-9C4C-5ECE0E3A1425}.Release.ActiveCfg = Release|Win32
+		{FC173C84-3EBF-4D1F-9C4C-5ECE0E3A1425}.Release.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+	EndGlobalSection
+	GlobalSection(ExtensibilityAddIns) = postSolution
+	EndGlobalSection
+EndGlobal
