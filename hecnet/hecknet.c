@@ -3,7 +3,9 @@ extern unsigned char wbuffer[2000];
 extern int buffersize;
 extern int wbuffercount;
 extern int buffercount;
-
+// compression
+extern void Encode(void);	/* Compress data */
+void Decode(void);			/* Just the reverse of Encode(). */
 
 //This build enables compression.  This breaks operation with 'normal' HECnet.
 //But things like doom get 80% compression so it's not nescicarly a bad thing.
@@ -12,6 +14,7 @@ extern int buffercount;
 
 /* A simple DECnet bridge program
  * (c) 2003, 2005 by Johnny Billquist
+ * Version 2.4 Add writing traffic to pcap
  * Version 2.3 Bugfix. Ports are *unsigned* shorts...
  *             Also added -Wall, and cleaned up some warnings.
  * Version 2.2 Some cleanup, bugfixes and general improvements.
@@ -57,7 +60,7 @@ extern int buffercount;
 #include <string.h>
 #include <strings.h>
 #include <arpa/inet.h>
-#else
+#else		/* Windows	*/
 #include "wingetopt.h"
 #include <winsock2.h>
 #include <windows.h>
@@ -67,12 +70,24 @@ extern int buffercount;
 
 typedef unsigned int in_addr_t;		//This isn't in windows...
 #define bzero(d,n) memset(d,0,n)	//neither is this.
+
+/*	time functions	*/
+struct timezone 
+{
+  int  tz_minuteswest; /* minutes W of Greenwich */
+  int  tz_dsttime;     /* type of dst correction */
+};
+ 
+
 //externs
 inet_aton(const char *cp, struct in_addr *addr);
 void usleep(int waitTime);
+int gettimeofday(struct timeval *tv, struct timezone *tz);
 #endif
 
 void NOexit(int rc);				//I wanted to capture the exit's.
+
+
 
 /* Throttling control:
  * THROTTLETIME - (mS)
@@ -188,7 +203,11 @@ struct BRIDGE {
   unsigned short port;
   int passive;
   int anyport;
+#ifdef WIN32
+  SOCKET fd;
+#else
   int fd;
+#endif
   int types[MAXTYP];
   char last[8][14];
   int lastptr;
@@ -221,10 +240,65 @@ struct HOST {
 struct HOST *hosts[HOST_HASH];
 struct BRIDGE bridge[MAX_HOST];
 int bcnt = 0;
+#ifdef _WIN32
+SOCKET sd;
+#else
 unsigned int sd;
+#endif
 char *config_filename;
 
+/* --- PCAP support ------------------------------------------------------- */
+
+struct pcap_hdr {
+    unsigned int   magic_number;
+    unsigned short version_major;
+    unsigned short version_minor;
+    int            thiszone;
+    unsigned int   sigfigs;
+    unsigned int   snaplen;
+    unsigned int   network;
+};
+
+struct pcaprec_hdr {
+    unsigned int ts_sec;
+    unsigned int ts_usec;
+    unsigned int incl_len;
+    unsigned int orig_len;
+};
+
 /* Here come the code... */
+
+/* pcap has a simple header */
+static void pcap_write_header(FILE *f)
+{
+    struct pcap_hdr h;
+    h.magic_number  = 0xa1b2c3d4;
+    h.version_major = 2;
+    h.version_minor = 4;
+    h.thiszone      = 0;
+    h.sigfigs       = 0;
+    h.snaplen       = 65535;
+    h.network       = 1; /* Ethernet */
+
+    fwrite(&h, sizeof(h), 1, f);
+}
+
+/* write a frame as a pcap */
+static void pcap_write_packet(FILE *f, const unsigned char *buf, int len)
+{
+    struct pcaprec_hdr ph;
+    struct timeval tv;
+
+    gettimeofday(&tv, NULL);
+
+    ph.ts_sec  = tv.tv_sec;
+    ph.ts_usec = tv.tv_usec;
+    ph.incl_len = len;
+    ph.orig_len = len;
+
+    fwrite(&ph, sizeof(ph), 1, f);
+    fwrite(buf, len, 1, f);
+}
 
 /* lookup
    Based on a sockaddr_in, find the corresponding bridge entry.
@@ -805,11 +879,12 @@ void dump_data()
   }
 }
 
+static FILE *pcap_file_handle = NULL;
 
 int main(int argc, char **argv)
 {
   struct sockaddr_in sa,rsa;
-  int i,hsock,ch;
+  int i,ch;
   fd_set fds;
   socklen_t ilen;
   int port = 0;
@@ -818,6 +893,9 @@ int main(int argc, char **argv)
 #ifndef UNIX
   int iResult;
   WSADATA wsaData;
+  SOCKET hsock;
+#else
+  int hsock;
 #endif
 
 #ifdef UNIX
@@ -834,7 +912,7 @@ int main(int argc, char **argv)
 
   config_filename = CONF_FILE;
 
-  while ((ch = getopt(argc, argv, "d:p:h")) != -1) {
+  while ((ch = getopt(argc, argv, "d:p:h:w")) != -1) {
     switch (ch) {
     case 'd':
       config_filename=malloc((int) strlen(CONF_FILE) +
@@ -844,13 +922,22 @@ int main(int argc, char **argv)
       break;
     case ':':
     case 'p':
-      printf("d: %s\n", optarg);
+      printf("listening on port %s\n", optarg);
       port = atoi(optarg);
       break;
+	case 'w':
+	  pcap_file_handle = fopen("hecnet.pcap", "wb");
+	  if (pcap_file_handle) {
+		  pcap_write_header(pcap_file_handle);
+		  printf("PCAP capture enabled: %s\n", "hecnet.pcap");
+	  } else {
+		  printf("ERROR: cannot open PCAP file %s\n", "hecnet.pcap");
+		}
+	break;
     case '?':
     case 'h':
     default:
-      printf("usage: %s [-p <port>] [-d <dir>] [<port>]\n", argv[0]);
+      printf("usage: %s [-p <port>] [-d <dir>] [<port>] [-w pcapfile]\n", argv[0]);
 	  NOexit(1);
     }
   }
@@ -875,9 +962,8 @@ int main(int argc, char **argv)
 	NOexit(1);
   }
 
-#if DEBUG
-  printf("Config filename: %s\n",config_filename);
-#endif
+printf("Config filename: %s\n",config_filename);
+
 
   if ((sd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) {
     perror("socket");
@@ -890,7 +976,9 @@ int main(int argc, char **argv)
   // Winsock's way of setting the socket to nonblocking
   {
 	u_long iMode=1;
-	ioctlsocket(sd,FIONBIO,&iMode);
+	int rc;
+	rc=ioctlsocket(sd,FIONBIO,&iMode);
+	printf("blocking socket returned %d\n",rc);
   }
 #endif
 
@@ -908,7 +996,10 @@ int main(int argc, char **argv)
   dump_data();
 #endif
 
+  printf("commands are:\t(d)ump stats\t\t(q)uit\n");
   while(1) {
+    char inp;
+	struct timeval tv;
 
     FD_ZERO(&fds);
     hsock = 0;
@@ -916,13 +1007,35 @@ int main(int argc, char **argv)
       FD_SET(bridge[i].fd, &fds);
       if (bridge[i].fd > hsock) hsock = bridge[i].fd;
     }
-    if (select(hsock+1,&fds,NULL,NULL,NULL) == -1) {
-      //if (errno != EINTR) {
-		if (errno == -1 ) {   //should check for ok/wouldblock I think.
-	perror("select");
-	printf(" %d",errno);
-	NOexit(1);
-      }
+	//delay for the poll
+	tv.tv_sec = 0;
+	tv.tv_usec = 500000;  // 0.5 seconds
+
+	//check the keyboard
+	if(_kbhit()){
+		inp=getch();
+		switch(inp)	{
+			case 's':
+			case 'S':
+			case 'd':
+			case 'D':
+				dump_data();
+				break;
+			case 'q':
+			case 'Q':
+				NOexit(0);
+			default:
+				break;
+			}	//end switch
+		}//end kbhit
+
+	//printf("S");fflush(stdout);		//debug
+    if (select(hsock+1,&fds,NULL,NULL,&tv) == -1) {
+		if (errno == -1 ) {   // EINTR should check for ok/wouldblock I think.
+		perror("select");
+		printf(" %d",errno);
+		NOexit(1);
+		}
     }
 
     for (i=0; i<bcnt; i++) {
@@ -943,6 +1056,11 @@ int main(int argc, char **argv)
 		d.data=buf;
 		d.len=d.len;
 //		d.type=classify_packet(&d);
+
+		if (pcap_file_handle) {
+			/* buf contains the full Ethernet frame */
+			pcap_write_packet(pcap_file_handle, buf, d.len);
+		}
 
 if(bridge[i].compressed==1)
 	{
@@ -982,8 +1100,10 @@ if(bridge[i].compressed==1)
 
 void NOexit(int rc)
 {
-	printf("\nPress Enter to exit..");
-	getch();
+//	printf("\nPress Enter to exit..");
+//	getch();
+	printf("exiting...");
 	WSACleanup();
+	printf("\n");fflush(stdout);
 	exit(rc);
 }
