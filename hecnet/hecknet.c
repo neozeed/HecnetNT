@@ -27,7 +27,7 @@ void Decode(void);			/* Just the reverse of Encode(). */
  */
 
 #define DEBUG 1
-//#define DEBUG2
+//#define DEBUG2 1
 
 #ifndef DPORT
 #define DPORT 0			/* Set to some other value for a default */
@@ -754,6 +754,7 @@ void register_source(struct DATA *d)
 
   hash = *(unsigned short *)(d->data+10);
   h = hosts[hash];
+
   while (h) {
     if (memcmp(h->mac, d->data+6, 6) == 0) {
       h->bridge = d->source;
@@ -804,8 +805,11 @@ pkttyp classify_packet(struct DATA *d)
 void dump_nomatch(struct sockaddr_in *r, struct DATA *d)
 {
 #if DEBUG2
-  printf("Dumped packet from %s (%d).\n", inet_ntoa(r->sin_addr),ntohs(r->sin_port));
+  printf("Dumped packet from %s port (%d).\n", inet_ntoa(r->sin_addr),ntohs(r->sin_port));
 #endif
+  printf("Dumping packet from %s mac [%02x:%02x:%02x:%02x:%02x:%02x] arrived from port %d\n",inet_ntoa(r->sin_addr),d->data[6],d->data[7],d->data[8],d->data[9],d->data[10],d->data[11],ntohs(r->sin_port));
+  //hail marry on this
+  //register_source(d);
 }
 
 void process_packet(struct DATA *d)
@@ -815,11 +819,17 @@ void process_packet(struct DATA *d)
 
   bridge[d->source].rcount++;
   gettimeofday(&bridge[d->source].lastrcv, NULL);
+
+#ifdef DEBUG2
+  printf("receive mac [%02x:%02x:%02x:%02x:%02x:%02x]\n",d->data[6],d->data[7],d->data[8],d->data[9],d->data[10],d->data[11]);
+#endif
+
   for (i=0; i<8; i++) {
     if (memcmp(bridge[d->source].last[i],d->data,14) == 0) {
       return;
     }
   }
+
 
   d->type = classify_packet(d);
   if (d->type == HECUnknown) return;
@@ -1021,6 +1031,7 @@ printf("Config filename: %s\n",config_filename);
 			case 'D':
 				dump_data();
 				break;
+			case 27:	//escape
 			case 'q':
 			case 'Q':
 				NOexit(0);
@@ -1029,7 +1040,6 @@ printf("Config filename: %s\n",config_filename);
 			}	//end switch
 		}//end kbhit
 
-	//printf("S");fflush(stdout);		//debug
     if (select(hsock+1,&fds,NULL,NULL,&tv) == -1) {
 		if (errno == -1 ) {   // EINTR should check for ok/wouldblock I think.
 		perror("select");
@@ -1041,6 +1051,7 @@ printf("Config filename: %s\n",config_filename);
     for (i=0; i<bcnt; i++) {
       if (FD_ISSET(bridge[i].fd,&fds)) {
 	d.source = i;
+	//read from pcap as the s_addr is 0
 	if (bridge[i].addr.s_addr == 0) {
 	  struct pcap_pkthdr h;
 	  d.data = pcap_next(bridge[i].pcap, &h);
@@ -1048,6 +1059,7 @@ printf("Config filename: %s\n",config_filename);
 	  if (d.data) {
 	    process_packet(&d);
 	  }
+	//read from network
 	} else {
 	  ilen = sizeof(rsa);
 	  /* Read packet from network*/
@@ -1055,29 +1067,28 @@ printf("Config filename: %s\n",config_filename);
 				(struct sockaddr *)&rsa, &ilen)) > 0) {
 		d.data=buf;
 		d.len=d.len;
-//		d.type=classify_packet(&d);
+		d.type=classify_packet(&d);
 
 		if (pcap_file_handle) {
 			/* buf contains the full Ethernet frame */
 			pcap_write_packet(pcap_file_handle, buf, d.len);
 		}
 
-if(bridge[i].compressed==1)
-	{
-		if( (buf[0]=='L')&&(buf[1]=='z'))	//check for Lz in the headder
-		{
-			d.len-=2;
-			memcpy(buffer,buf+2,d.len);
-			buffersize=d.len;					//Trim headder
-			Decode();  
-			memcpy(buf,wbuffer,wbuffercount);	//Put things where hecnet expects them.
-			d.len=wbuffercount;
-		}
-		
-	}
+		//decompress compressed bridge data
+		if(bridge[i].compressed==1)
+			{
+				if( (buf[0]=='L')&&(buf[1]=='z'))	//check for Lz in the headder
+				{
+					d.len-=2;
+					memcpy(buffer,buf+2,d.len);
+					buffersize=d.len;					//Trim headder
+					Decode();  
+					memcpy(buf,wbuffer,wbuffercount);	//Put things where hecnet expects them.
+					d.len=wbuffercount;
+				}
+				
+			}
 		//else	//Otherwise it must be a packet, right? carry on?
-		
-	    
 	    if ((d.source = lookup(&rsa)) >= 0) {
 	      process_packet(&d);
 	    } else {
